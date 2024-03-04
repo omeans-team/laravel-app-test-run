@@ -2,102 +2,102 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Product;
-use App\Models\Category;
-use Illuminate\Http\RedirectResponse;
+use App\Product;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
-use Illuminate\View\View;
+use Yajra\DataTables\Facades\DataTables;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
+
 
 class ProductController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index(): View
+
+    public function __construct()
     {
-        $products = Product::latest()->paginate(5);
-        $categories = Category::all();
-      
-        return view('products.index',compact('products'), compact('categories'))
-                    ->with('i', (request()->input('page', 1) - 1) * 5);
+        $this->product = new Product();
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create(): View
+    public function index()
     {
-        $categories = Category::all();
-        // return view('products.create');
-        return view('products.create', compact('categories'));
+        return view('backend.product.index');
+
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request): RedirectResponse
-    {
-        $request->validate([
-            'image' => '',
-            'name' => 'required',
-            'kategori' => 'required',
-            'hargabeli' => 'required',
-            'hargajual' => 'required',
-            'stok' => 'required',
-        ]);
-      
-        Product::create($request->all());
-       
-        return redirect()->route('products.index')
-                        ->with('success','Product created successfully.');
+    public function source(){
+        $query= Product::query();
+        return DataTables::eloquent($query)
+        ->filter(function ($query) {
+            if (request()->has('search')) {
+                $query->where(function ($q) {
+                    $q->where('name', 'LIKE', '%' . request('search')['value'] . '%');
+                });
+            }
+            })
+            ->addColumn('name', function ($data) {
+                return title_case($data->name);
+            })
+            ->addColumn('price', function ($data) {
+                return number_format($data->price,0,',','.');
+            })
+            ->addIndexColumn()
+            ->addColumn('action', 'backend.product.index-action')
+            ->rawColumns(['action'])
+            ->toJson();
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(Product $product): View
+    public function create()
     {
-        return view('products.show',compact('product'));
+        return view('backend.product.create');
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Product $product): View
+    public function store(Request $request)
     {
-        $categories = Category::all();
-        return view('products.edit',compact('product'),compact('categories'));
+        DB::beginTransaction();
+        try {
+            $request->merge(['slug'=>str_slug($request->name)]);
+            $this->product->create($request->all());
+            DB::commit();
+            return redirect()->route('product.index')->with('success-message','Data telah disimpan');
+        } catch (\Exception $e) {
+            DB::rollback();
+            return redirect()->back()->with('error-message',$e->getMessage());
+        }
+
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, Product $product): RedirectResponse
+    public function show($id)
     {
-        $request->validate([
-            'image' => '',
-            'name' => 'required',
-            'kategori' => 'required',
-            'hargabeli' => 'required',
-            'hargajual' => 'required',
-            'stok' => 'required',
-        ]);
-      
-        $product->update($request->all());
-      
-        return redirect()->route('products.index')
-                        ->with('success','Product updated successfully');
+        $data = $this->product->find($id);
+        return $data;
+
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Product $product): RedirectResponse
+    public function edit($id)
     {
-        $product->delete();
-       
-        return redirect()->route('products.index')
-                        ->with('success','Product deleted successfully');
+        $data = $this->product->find($id);
+        return view('backend.product.edit',compact('data'));
+
     }
+
+    public function update(Request $request, $id)
+    {
+        DB::beginTransaction();
+        try {
+            $request->merge(['slug'=>str_slug($request->name)]);
+            $this->product->find($id)->update($request->all());
+            DB::commit();
+            return redirect()->route('product.index')->with('success-message','Data telah d irubah');
+        } catch (\Exception $e) {
+            DB::rollback();
+            return redirect()->back()->with('error-message',$e->getMessage());
+        }
+
+    }
+
+    public function destroy($id)
+    {
+        $this->product->destroy($id);
+        return redirect()->route('product.index')->with('success-message','Data telah dihapus');
+    }
+
 }
